@@ -198,31 +198,104 @@ export default function CampGalleryCanvas({ builtCamps }: CampGalleryCanvasProps
       shelterGroup.position.set(0, 0.2, 0); // perfectly centered
       masterGroup.add(shelterGroup);
 
-      // Main structural dome-cabin
-      const tentGeom = new THREE.ConeGeometry(1.4, 2.0, 4); // sci-fi triangular wedge shelter
-      tentGeom.rotateY(Math.PI / 4);
-      const tentMat = getScifiMaterial(0xd97706, 0.6, 0.4, 0xf59e0b, 0.3); // amber fabric/metal composite
-      const tentMesh = new THREE.Mesh(tentGeom, tentMat);
-      tentMesh.position.y = 1.0;
-      tentMesh.castShadow = true;
-      shelterGroup.add(tentMesh);
+      // Warm timber cedar and grey stone palette
+      const stoneMat = getScifiMaterial(0x334155, 0.9, 0.1); // grey stone foundation
+      const woodWallMat = getScifiMaterial(0x854d0e, 0.8, 0.2); // cedar log walls
+      const darkWoodMat = getScifiMaterial(0x451a03, 0.9, 0.1); // dark framing
+      const mossRoofMat = getScifiMaterial(0x0f2913, 0.7, 0.3); // deep forest green tile roof (matches image!)
+      const glassGlowMat = getScifiMaterial(0xfef08a, 0.1, 0.9, 0xf59e0b, 1.8); // cozy burning amber window light
 
-      // Deep protective entry portal
-      const gateGeom = new THREE.BoxGeometry(0.8, 1.1, 0.8);
-      const gateMat = getScifiMaterial(0x1e293b, 0.4, 0.8);
-      const gateMesh = new THREE.Mesh(gateGeom, gateMat);
-      gateMesh.position.set(0, 0.55, 0.7);
-      shelterGroup.add(gateMesh);
+      // 1. Stone foundation slab
+      const foundation = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.15, 2.0), stoneMat);
+      foundation.position.y = 0.075;
+      shelterGroup.add(foundation);
 
-      const entryLightGeom = new THREE.SphereGeometry(0.08, 6, 6);
-      const entryLightMat = getScifiMaterial(0x10b981, 0.1, 0.9, 0x10b981, 2.0);
-      const entryLight = new THREE.Mesh(entryLightGeom, entryLightMat);
-      entryLight.position.set(0, 1.1, 1.1);
-      shelterGroup.add(entryLight);
+      // 2. Cabin main walls
+      const walls = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.1, 1.6), woodWallMat);
+      walls.position.y = 0.7;
+      walls.castShadow = true;
+      shelterGroup.add(walls);
+
+      // 3. Gable pitched forest green tile roof (two matching slanted panels)
+      const roofL = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 1.9), mossRoofMat);
+      roofL.position.set(-0.48, 1.45, 0);
+      roofL.rotation.z = 0.45;
+      roofL.castShadow = true;
+      shelterGroup.add(roofL);
+
+      const roofR = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 1.9), mossRoofMat);
+      roofR.position.set(0.48, 1.45, 0);
+      roofR.rotation.z = -0.45;
+      roofR.castShadow = true;
+      shelterGroup.add(roofR);
+
+      // Triangular gable filling under roof
+      const gableGeo = new THREE.ConeGeometry(0.7, 0.4, 4);
+      gableGeo.rotateY(Math.PI / 4);
+      gableGeo.rotateZ(Math.PI / 2);
+      const gableL = new THREE.Mesh(gableGeo, woodWallMat);
+      gableL.position.set(0, 1.25, 0.75);
+      shelterGroup.add(gableL);
+
+      const gableR = gableL.clone();
+      gableR.position.z = -0.75;
+      shelterGroup.add(gableR);
+
+      // 4. Cozy Front Door
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.75, 0.08), darkWoodMat);
+      door.position.set(0, 0.45, 0.81);
+      shelterGroup.add(door);
+
+      // Small door metal handle stud
+      const handle = new THREE.Mesh(new THREE.SphereGeometry(0.025, 4, 4), getScifiMaterial(0xf59e0b, 0.1, 0.9));
+      handle.position.set(0.12, 0.45, 0.86);
+      shelterGroup.add(handle);
+
+      // 5. Cozy glowing side window
+      const windowFrame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.42), darkWoodMat);
+      windowFrame.position.set(0.81, 0.75, 0);
+      shelterGroup.add(windowFrame);
+
+      const windowGlow = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.34, 0.34), glassGlowMat);
+      windowGlow.position.set(0.85, 0.75, 0);
+      shelterGroup.add(windowGlow);
+
+      // 6. Brick Chimney
+      const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.4, 0.3), stoneMat);
+      chimney.position.set(-0.55, 1.0, -0.45);
+      chimney.castShadow = true;
+      shelterGroup.add(chimney);
+
+      const chimneyCap = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.36), darkWoodMat);
+      chimneyCap.position.set(-0.55, 1.7, -0.45);
+      shelterGroup.add(chimneyCap);
+
+      // Small security neon caution beacon atop the roof crest (modern collapse safety touch)
+      const safetyBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), getScifiMaterial(0xef4444, 0.1, 0.9, 0xef4444, 1.8));
+      safetyBeacon.position.set(0, 1.62, 0);
+      shelterGroup.add(safetyBeacon);
+
+      // 7. Mini camp wooden fence surrounding the cabin yard (Voxel style)
+      const fenceMat = darkWoodMat;
+      const fencePostGeo = new THREE.BoxGeometry(0.08, 0.5, 0.08);
+      const fenceRailGeo = new THREE.BoxGeometry(0.05, 0.05, 1.2);
+
+      // Spawn fence items on left/right edges
+      for (const edgeX of [-0.95, 0.95]) {
+        for (let zVal = -0.8; zVal <= 0.8; zVal += 0.8) {
+          const post = new THREE.Mesh(fencePostGeo, fenceMat);
+          post.position.set(edgeX, 0.3, zVal);
+          shelterGroup.add(post);
+        }
+        const rail = new THREE.Mesh(fenceRailGeo, fenceMat);
+        rail.position.set(edgeX, 0.42, 0);
+        rail.rotation.y = Math.PI / 2;
+        shelterGroup.add(rail);
+      }
 
       // Small cozy cyber-campfire right besides it
       const fireGroup = new THREE.Group();
-      fireGroup.position.set(0.9, 0, 1.1);
+      fireGroup.position.set(1.0, 0, 1.1);
       shelterGroup.add(fireGroup);
 
       const woodGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 4);

@@ -179,3 +179,31 @@ export const playDefeatSound = () => {
     console.warn('Audio play failed', e);
   }
 };
+
+export const playJumpSound = () => {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = 'triangle';
+    
+    // Quick ascending beep
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(260, now);
+    osc.frequency.exponentialRampToValueAtTime(600, now + 0.12);
+
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } catch (e) {
+    console.warn('Audio play failed', e);
+  }
+};

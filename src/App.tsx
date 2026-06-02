@@ -1193,6 +1193,15 @@ export default function App() {
                     </li>
                     <li>
                       {language === 'ko' ? (
+                        <>키보드의 <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">Space</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">W</kbd> 키를 누르면 공중으로 높이 점프하여 지상 장애물을 완벽히 회피할 수 있습니다.</>
+                      ) : language === 'en' ? (
+                        <>Press <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">Spacebar</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">W</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">↑</kbd> to jump over obstacles in your path.</>
+                      ) : (
+                        <>按下键盘 <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">空格键</kbd> 或 <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">W</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-800 rounded font-mono border border-slate-700 text-white font-bold text-[10px]">↑</kbd> 键可以让角色跳跃，完美躲避地面的所有地面障碍。</>
+                      )}
+                    </li>
+                    <li>
+                      {language === 'ko' ? (
                         <>무작위로 만나는 <strong className="text-amber-500">원자재</strong> (<span className="text-amber-500">목재</span>, <span className="text-blue-400">금속합금</span>, <span className="text-yellow-400">배터리</span>)를 획득하여 수리 진척도를 백분율로 채우십시오.</>
                       ) : language === 'en' ? (
                         <>Collect <strong className="text-amber-500">Materials</strong> (<span className="text-amber-500">Wood</span>, <span className="text-blue-400">Metal</span>, <span className="text-yellow-400">Solar Cell</span>) along the run to progress.</>
@@ -1755,7 +1764,7 @@ export default function App() {
                   </span>
                   <div>
                     <h2 className="text-sm font-black text-white tracking-widest uppercase flex items-center gap-1">
-                      <span>营地图鉴基地</span>
+                      <span>{language === 'ko' ? '대피 캠프 도감 기지' : language === 'en' ? 'Camp Gallery Hub' : '营地图鉴基地'}</span>
                     </h2>
                     <p className="text-[9px] font-mono tracking-wider text-slate-500 uppercase">
                       SURVIVAL SHELTER ATLAS
@@ -1773,7 +1782,7 @@ export default function App() {
                   id="btn_gallery_back"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>返回</span>
+                  <span>{language === 'ko' ? '뒤로' : language === 'en' ? 'Back' : '返回'}</span>
                 </button>
               </div>
 
@@ -1781,7 +1790,10 @@ export default function App() {
               <div className="bg-slate-900/60 py-1.5 px-3 border border-slate-850 rounded-lg flex justify-between items-center text-[10px] text-slate-400 shrink-0 select-none">
                 <span className="flex items-center gap-1 text-slate-400">
                   <Trophy className="w-3.5 h-3.5 text-yellow-500" />
-                  <span>已投建科技设施: <strong className="text-emerald-400 font-mono">{builtCamps.length}</strong> / 7 款</span>
+                  <span>
+                    {language === 'ko' ? '건설된 과학 기지 타일: ' : language === 'en' ? 'Constructed Science Techs: ' : '已投建科技设施: '}
+                    <strong className="text-emerald-400 font-mono">{builtCamps.length}</strong> / 7
+                  </span>
                 </span>
                 
                 {/* One click unlock helper to make review/verification extremely seamless */}
@@ -1793,9 +1805,15 @@ export default function App() {
                     playVictorySound();
                   }}
                   className="text-[9px] hover:text-cyan-400 text-slate-600 underline font-mono cursor-pointer transition-colors"
-                  title="点击可一键解锁所有营地，无需通关，便于立刻进行3D效果查看和评审！"
+                  title={
+                    language === 'ko'
+                      ? '클릭 시 게임 보스를 클리어할 필요 없이 즉시 기지 건설 3D 효과를 확인 및 심사할 수 있습니다!'
+                      : language === 'en'
+                        ? 'Click to instantly unlock all 3D camp modules for testing and demonstration!'
+                        : '点击可一键解锁所有营地，无需通关，便于立刻进行3D效果查看和评审！'
+                  }
                 >
-                  [一键解锁全部图鉴]
+                  [{language === 'ko' ? '치트: 전체 도감 즉시 해제' : language === 'en' ? 'Cheat: Unlock All Atlas' : '一键解锁全部图鉴'}]
                 </button>
               </div>
 
@@ -1814,21 +1832,21 @@ export default function App() {
 
                 {/* Floating dynamic info banner on TOP of the canvas */}
                 <div className="absolute top-3 left-3 bg-slate-950/85 border border-slate-800 py-1 px-2.5 rounded-lg text-[9px] backdrop-blur-md text-slate-300 select-none z-20 font-mono tracking-wider flex items-center gap-1">
-                  <span>当前选中展示:</span>
+                  <span>{language === 'ko' ? '현재 노출 대상:' : language === 'en' ? 'Current Showcase:' : '当前选中展示:'}</span>
                   <span className="font-bold text-cyan-400">
-                    {CAMP_MODULES.find(m => m.id === selectedGalleryLevel)?.emoji} {CAMP_MODULES.find(m => m.id === selectedGalleryLevel)?.name}
+                    {CAMP_MODULES.find(m => m.id === selectedGalleryLevel)?.emoji} {getModuleTranslation(selectedGalleryLevel, language).name}
                   </span>
                 </div>
 
                 <div className="absolute top-3 right-3 bg-slate-950/85 border border-slate-800 py-1 px-2.5 rounded-lg text-[9px] backdrop-blur-md text-slate-300 select-none z-20 font-mono tracking-wider flex items-center gap-1">
-                  <span>解锁状态:</span>
+                  <span>{language === 'ko' ? '잠금 상태:' : language === 'en' ? 'Lock Status:' : '解锁状态:'}</span>
                   {builtCamps.includes(selectedGalleryLevel) ? (
                     <span className="text-emerald-400 font-extrabold flex items-center gap-0.5">
-                      <CheckCircle className="w-2.5 h-2.5 inline text-emerald-400" /> 已建造
+                      <CheckCircle className="w-2.5 h-2.5 inline text-emerald-400" /> {language === 'ko' ? '완공됨' : language === 'en' ? 'Built' : '已建造'}
                     </span>
                   ) : (
                     <span className="text-rose-450 font-bold flex items-center gap-0.5">
-                      <Lock className="w-2.5 h-2.5 inline text-rose-500" /> 未建造
+                      <Lock className="w-2.5 h-2.5 inline text-rose-500" /> {language === 'ko' ? '잠김' : language === 'en' ? 'Locked' : '未建造'}
                     </span>
                   )}
                 </div>
@@ -1860,12 +1878,12 @@ export default function App() {
                       <span className={`text-base mb-0.5 ${!unlocked ? 'grayscale opacity-30 filter blur-[0.5px]' : ''}`}>
                         {module.emoji}
                       </span>
-                      <span className="text-[8px] font-bold tracking-tight text-center truncate w-full px-0.5">{module.name}</span>
+                      <span className="text-[8px] font-bold tracking-tight text-center truncate w-full px-0.5">{getModuleTranslation(module.id, language).name}</span>
                       
                       {unlocked ? (
                         <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full flex items-center justify-center text-[7px] text-slate-950 font-black border border-slate-950">
                           ✓
-                        </span>
+                      </span>
                       ) : (
                         <span className="absolute -top-1 -right-1 w-3 h-3 bg-slate-800 rounded-full flex items-center justify-center text-[7px] text-slate-400 border border-slate-400/20">
                           🔒
@@ -1887,7 +1905,7 @@ export default function App() {
                     <div>
                       <h4 className="text-xs font-black text-white flex items-center gap-1.5">
                         <span>{CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.emoji}</span>
-                        <span>{CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.name}</span>
+                        <span>{getModuleTranslation(selectedGalleryLevel, language).name}</span>
                       </h4>
                       <p className="text-[8px] font-mono tracking-wider text-slate-500 uppercase">
                         {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.english}
@@ -1899,35 +1917,35 @@ export default function App() {
                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/35'
                         : 'bg-slate-950 text-slate-500 border-slate-800'
                     }`}>
-                      {builtCamps.includes(selectedGalleryLevel) ? '已建成' : '未解锁'}
+                      {builtCamps.includes(selectedGalleryLevel) ? (language === 'ko' ? '완공됨' : language === 'en' ? 'Built' : '已建成') : (language === 'ko' ? '미해제' : language === 'en' ? 'Locked' : '未解锁')}
                     </span>
                   </div>
 
                   <p className="text-[10px] text-slate-400 leading-relaxed text-left min-h-[36px]">
-                    {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.description}
+                    {getModuleTranslation(selectedGalleryLevel, language).description}
                   </p>
                 </div>
 
                 <div className="mt-1.5 text-[9.5px] text-teal-300 bg-slate-950/60 py-1 px-2 rounded-lg border border-slate-850 flex items-center gap-1.5">
                   <Wrench className="w-3.5 h-3.5 text-teal-400 shrink-0" />
                   <span className="font-semibold select-none text-left">
-                    建造成果：
-                    <span className="text-slate-300 font-normal">{CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.effect}</span>
+                    {language === 'ko' ? '기지 건설 혜택: ' : language === 'en' ? 'Construction Outcome: ' : '建造成果：'}
+                    <span className="text-slate-300 font-normal">{getModuleTranslation(selectedGalleryLevel, language).effect}</span>
                   </span>
                 </div>
 
                 {/* Material recipe requirements list in the bottom footer */}
                 <div className="mt-2 flex justify-between items-center text-[9px] text-slate-500 font-mono select-none">
-                  <span>建造所需物资储备:</span>
+                  <span>{language === 'ko' ? '기지 설계 자재 리스트: ' : language === 'en' ? 'Building Material Cost: ' : '建造所需物资储备:'}</span>
                   <div className="flex gap-2">
                     <span className="text-amber-400 font-bold">
-                      木材 {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.woodReq}
+                      {getTranslation(language, 'woodName')} {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.woodReq}
                     </span>
                     <span className="text-cyan-400 font-bold">
-                      合金 {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.metalReq}
+                      {getTranslation(language, 'metalName')} {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.metalReq}
                     </span>
                     <span className="text-yellow-400 font-bold">
-                      电池 {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.solarReq}
+                      {getTranslation(language, 'solarName')} {CAMP_MODULES.find(t => t.id === selectedGalleryLevel)?.solarReq}
                     </span>
                   </div>
                 </div>

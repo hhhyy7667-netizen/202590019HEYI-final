@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { GameStatus, Player, Obstacle, MaterialItem, Camp, Particle, LanePosition, CharacterId } from '../types';
-import { playCollectSound, playHitSound, playCampSound } from '../utils/audio';
+import { playCollectSound, playHitSound, playCampSound, playJumpSound } from '../utils/audio';
 
 interface GameCanvasProps {
   status: GameStatus;
@@ -41,52 +41,66 @@ const createCrackedRoadTexture = () => {
   canvas.height = 1024;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    // Ground color - cracked apocalyptic grey-brown asphalt
-    ctx.fillStyle = '#1c1a21';
+    // Ground base color: post-apocalyptic dark obsidian brick base
+    ctx.fillStyle = '#111013';
     ctx.fillRect(0, 0, 512, 1024);
 
-    // Draw cracked lines all over
-    ctx.strokeStyle = '#0a080d';
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 50; i++) {
-      ctx.beginPath();
-      let curX = Math.random() * 512;
-      let curY = Math.random() * 1024;
-      ctx.moveTo(curX, curY);
-      for (let j = 0; j < 4; j++) {
-        curX += (Math.random() - 0.5) * 120;
-        curY += (Math.random() - 0.5) * 120;
-        ctx.lineTo(curX, curY);
+    // Number of tile bricks: 12 columns, 32 rows
+    const cols = 12;
+    const rows = 32;
+    const tileW = Math.ceil(512 / cols);
+    const tileH = Math.ceil(1024 / rows);
+
+    const colors = [
+      '#1c1a20', '#252229', '#1d1b22', '#211e25',
+      '#19171d', '#292631', '#1e1c20', '#232029',
+      '#2d2936', '#1b191e'
+    ];
+
+    for (let r = 0; r < rows; r++) {
+      // Offset alternate rows to look like actual paved brick layer
+      const xOffset = (r % 2) * (tileW / 2);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * tileW + xOffset;
+        const y = r * tileH;
+
+        // Choose a randomized dirty brick color
+        let colorStr = colors[Math.floor(Math.random() * colors.length)];
+        
+        // Add occasional post-apocalyptic overgrown Moss ruin brick block
+        if (Math.random() < 0.08) {
+          colorStr = '#233226'; // Dull post-collapse forest moss green
+        }
+
+        ctx.fillStyle = colorStr;
+        // Border margins for voxel gap
+        ctx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2);
+
+        // Sub-pixel brick detailing (Voxel noise studs)
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fillRect(x + 3, y + 3, 6, 6);
+        ctx.fillStyle = 'rgba(0,0,0,0.12)';
+        ctx.fillRect(x + tileW - 9, y + tileH - 9, 6, 6);
+
+        // Beautiful magma radioactive seepages along brick joint paths
+        if (Math.random() < 0.05) {
+          ctx.strokeStyle = '#ea580c';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 1, y + 1);
+          ctx.lineTo(x + tileW - 1, y + 1);
+          ctx.lineTo(x + tileW - 1, y + tileH - 1);
+          ctx.stroke();
+        }
       }
-      ctx.stroke();
     }
 
-    // Faded eroded side lanes
-    ctx.fillStyle = '#2f2321';
-    for (let y = 0; y < 1024; y += 4) {
-      if (Math.random() > 0.3) {
-        ctx.fillRect(0, y, 15 + Math.random() * 20, 3);
-        ctx.fillRect(477 - Math.random() * 20, y, 40, 3);
-      }
+    // Side safety stripes painted with brick yellow pattern
+    ctx.fillStyle = '#ca8a04';
+    for (let y = 0; y < 1024; y += 48) {
+      ctx.fillRect(4, y + 6, 10, 20);
+      ctx.fillRect(498, y + 6, 10, 20);
     }
-
-    // Cracks in progress highlighted with orange/red radioactive seepages
-    ctx.strokeStyle = '#ea580c'; // magma orange seepage
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 6; i++) {
-      ctx.beginPath();
-      let curX = Math.random() * 512;
-      let curY = Math.random() * 1024;
-      ctx.moveTo(curX, curY);
-      ctx.globalAlpha = 0.65;
-      for (let j = 0; j < 3; j++) {
-        curX += (Math.random() - 0.5) * 70;
-        curY += (Math.random() - 0.5) * 70;
-        ctx.lineTo(curX, curY);
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1.0;
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
@@ -128,6 +142,8 @@ export default function GameCanvas({
   const pX = useRef<number>(50); // Player X position (12 to 88 on road)
   const pHp = useRef<number>(100);
   const pInvulnerableTime = useRef<number>(0); // countdown in ms
+  const pJumpY = useRef<number>(0); // vertical jump height in meters/units
+  const pJumpVelocity = useRef<number>(0); // jump vertical velocity
 
   // Items and entities in 2D coordinate layers
   const obstacles = useRef<Obstacle[]>([]);
@@ -298,30 +314,48 @@ export default function GameCanvas({
     road.position.set(0, 0, -35); // centers spanning from Z=-95 to Z=25
     scene.add(road);
 
-    // Glowing Rusted Amber Guardrails (Boundaries)
-    const railGeo = new THREE.BoxGeometry(0.3, 0.6, 120);
-    const railMatLeft = new THREE.MeshStandardMaterial({
-      color: 0xea580c,
-      emissive: 0x9a3412,
-      roughness: 0.7
+    // Staggered Voxel Concrete Barriers along left/right limits
+    const barrierMatLeft = new THREE.MeshStandardMaterial({
+      color: 0x475569, // weathered dark grey stone
+      roughness: 0.9,
     });
-    const railLeft = new THREE.Mesh(railGeo, railMatLeft);
-    railLeft.position.set(-6, 0.3, -35);
-    scene.add(railLeft);
-
-    const railMatRight = new THREE.MeshStandardMaterial({
-      color: 0xea580c,
-      emissive: 0x9a3412,
-      roughness: 0.7
+    const barrierMatRight = new THREE.MeshStandardMaterial({
+      color: 0x334155, // alternating stone tone
+      roughness: 0.9,
     });
-    const railRight = new THREE.Mesh(railGeo, railMatRight);
-    railRight.position.set(6, 0.3, -35);
-    scene.add(railRight);
 
-    // Dashboard line markers inside lane (faded warning amber/brown to simulate speed rushing)
+    const blockGeo = new THREE.BoxGeometry(0.4, 0.45, 4.0);
+
+    // Populate brick barriers along the limits (spanning Z = -95 to Z = 25)
+    for (let z = -93; z <= 25; z += 6.5) {
+      const isAlt = Math.floor(z / 6.5) % 2 === 0;
+
+      // Left modular barrier block
+      const bL = new THREE.Mesh(blockGeo, isAlt ? barrierMatLeft : barrierMatRight);
+      bL.position.set(-6, 0.225, z);
+      scene.add(bL);
+
+      // Add a small neon warning cap (voxel-styled blinking red/orange caution marker atop barriers)
+      const capGeo = new THREE.BoxGeometry(0.12, 0.08, 0.25);
+      const capMat = new THREE.MeshBasicMaterial({ color: isAlt ? 0xef4444 : 0xea580c });
+      const capL = new THREE.Mesh(capGeo, capMat);
+      capL.position.set(-6, 0.475, z + (Math.random() - 0.5));
+      scene.add(capL);
+
+      // Right modular barrier block
+      const bR = new THREE.Mesh(blockGeo, !isAlt ? barrierMatLeft : barrierMatRight);
+      bR.position.set(6, 0.225, z);
+      scene.add(bR);
+
+      const capR = new THREE.Mesh(capGeo, capMat);
+      capR.position.set(6, 0.475, z + (Math.random() - 0.5));
+      scene.add(capR);
+    }
+
+    // Dashboard line markers inside lane (bright amber-yellow marks matching user image!)
     const linesArr: THREE.Mesh[] = [];
     const lineGeo = new THREE.BoxGeometry(0.15, 0.02, 3.5);
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0x78350f });
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xca8a04 });
 
     // Place dashed lines on Z = -85 to Z = 25
     for (let z = -85; z <= 25; z += 18) {
@@ -603,9 +637,9 @@ export default function GameCanvas({
       roadGeo.dispose();
       roadTexture.dispose();
       roadMat.dispose();
-      railGeo.dispose();
-      railMatLeft.dispose();
-      railMatRight.dispose();
+      blockGeo.dispose();
+      barrierMatLeft.dispose();
+      barrierMatRight.dispose();
       lineGeo.dispose();
       lineMat.dispose();
       starsGeo.dispose();
@@ -696,6 +730,8 @@ export default function GameCanvas({
   const resetGameEntities = () => {
     pX.current = 50;
     pHp.current = 100;
+    pJumpY.current = 0;
+    pJumpVelocity.current = 0;
     obstacles.current = [];
     materials.current = [];
     activeCamp.current = null;
@@ -868,6 +904,23 @@ export default function GameCanvas({
         pX.current = Math.max(12, Math.min(88, pX.current));
       }
 
+      // Handle Spacebar / W / ArrowUp Jump Triggering
+      const isPressingJump = keysPressed.current[' '] || keysPressed.current['w'] || keysPressed.current['arrowup'];
+      if (isPressingJump && pJumpY.current === 0 && pJumpVelocity.current === 0) {
+        pJumpVelocity.current = 0.165; // initial upward velocity
+        playJumpSound();
+      }
+
+      // Physics update for Jump
+      if (pJumpY.current > 0 || pJumpVelocity.current > 0) {
+        pJumpY.current += pJumpVelocity.current * dtFactor;
+        pJumpVelocity.current -= 0.009 * dtFactor; // gravity deceleration
+        if (pJumpY.current <= 0) {
+          pJumpY.current = 0;
+          pJumpVelocity.current = 0;
+        }
+      }
+
       // Generation spawner
       spawnItems(performance.now());
 
@@ -887,7 +940,10 @@ export default function GameCanvas({
         const distY = Math.abs(ob.y - playerY);
         const distX = Math.abs(obPxX - playerPxX);
 
-        if (distY < 32 && distX < 28 && pInvulnerableTime.current <= 0) {
+        // If the player is jumping high enough, they bypass ground barriers!
+        const canCollide = pJumpY.current < 0.45;
+
+        if (canCollide && distY < 32 && distX < 28 && pInvulnerableTime.current <= 0) {
           pHp.current = Math.max(0, pHp.current - ob.damage);
           onHpChange(pHp.current);
           pInvulnerableTime.current = 1200;
@@ -1004,6 +1060,323 @@ export default function GameCanvas({
       }
     };
 
+    // Helper to build 3D low-poly character model
+    const buildWastelandRunner = (charId: string): { group: THREE.Group; thrusterFlame: THREE.Mesh | null } => {
+      const g = new THREE.Group();
+      g.name = "charGroup";
+      
+      let thrusterFlame: THREE.Mesh | null = null;
+
+      // Helper to add jointed voxel limb (swings cleanly from joint)
+      const createJointedVoxelLimb = (name: string, geo: THREE.BufferGeometry, mat: THREE.Material, pos: [number, number, number], meshYOffset: number, shoeGeo?: THREE.BufferGeometry, shoeMat?: THREE.Material): THREE.Group => {
+        const joint = new THREE.Group();
+        joint.name = name;
+        joint.position.set(...pos);
+        
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(0, meshYOffset, 0);
+        joint.add(m);
+
+        if (shoeGeo && shoeMat) {
+          const shoe = new THREE.Mesh(shoeGeo, shoeMat);
+          shoe.position.set(0, meshYOffset * 2, 0.03);
+          joint.add(shoe);
+        }
+        return joint;
+      };
+
+      if (charId === 'MALE_PILOT') {
+        const pSkinMat = new THREE.MeshStandardMaterial({ color: 0xfed7aa, roughness: 0.6 }); // skin tone peach
+        const pHairMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.95 }); // voxel brown hair
+        const pJacketMat = new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.8 }); // teal survival jacket
+        const pShirtMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.8 }); // dark shirt
+        const pLegMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 }); // blue-grey jeans
+        const pShoeMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.9 }); // robust boots
+
+        // Torso box
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.50, 0.24), pJacketMat);
+        torso.position.set(0, 0.1, 0);
+        g.add(torso);
+
+        // inner grey shirt band
+        const shirt = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.52, 0.25), pShirtMat);
+        shirt.position.set(0, 0.1, 0);
+        g.add(shirt);
+
+        // Square Head
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.30, 0.30), pSkinMat);
+        head.position.set(0, 0.46, 0);
+        g.add(head);
+
+        // Blocky Hair Cap
+        const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.10, 0.32), pHairMat);
+        hairTop.position.set(0, 0.58, -0.01);
+        g.add(hairTop);
+
+        const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.10), pHairMat);
+        hairBack.position.set(0, 0.48, -0.11);
+        g.add(hairBack);
+
+        const hairFringe = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.06), pHairMat);
+        hairFringe.position.set(0, 0.55, 0.12);
+        g.add(hairFringe);
+
+        // Pixelated Eyes
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.02), eyeMat);
+        eyeL.position.set(-0.07, 0.48, 0.145);
+        g.add(eyeL);
+
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.07;
+        g.add(eyeR);
+
+        // Back-pack survival supply kit with miniature radio antenna (Voxel style)
+        const pack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.35, 0.16), new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.9 }));
+        pack.position.set(0, 0.10, -0.18);
+        g.add(pack);
+
+        const antenna = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.30, 0.03), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+        antenna.position.set(0.08, 0.35, -0.18);
+        g.add(antenna);
+
+        const antennaTip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), new THREE.MeshBasicMaterial({ color: 0xea580c }));
+        antennaTip.position.set(0.08, 0.50, -0.18);
+        g.add(antennaTip);
+
+        // Join Voxel limbs using BoxGeometry
+        g.add(createJointedVoxelLimb("leftArm", new THREE.BoxGeometry(0.11, 0.35, 0.11), pJacketMat, [-0.25, 0.22, 0], -0.15));
+        g.add(createJointedVoxelLimb("rightArm", new THREE.BoxGeometry(0.11, 0.35, 0.11), pJacketMat, [0.25, 0.22, 0], -0.15));
+        g.add(createJointedVoxelLimb("leftLeg", new THREE.BoxGeometry(0.12, 0.36, 0.12), pLegMat, [-0.11, -0.18, 0], -0.16, new THREE.BoxGeometry(0.14, 0.07, 0.16), pShoeMat));
+        g.add(createJointedVoxelLimb("rightLeg", new THREE.BoxGeometry(0.12, 0.36, 0.12), pLegMat, [0.11, -0.18, 0], -0.16, new THREE.BoxGeometry(0.14, 0.07, 0.16), pShoeMat));
+
+      } else if (charId === 'FEMALE_PILOT') {
+        const pSkinMat = new THREE.MeshStandardMaterial({ color: 0xffedd5, roughness: 0.6 }); // pale skin peach
+        const pHairMat = new THREE.MeshStandardMaterial({ color: 0x2e1065, roughness: 0.95 }); // dark purple ponytail hair (matches Irene)
+        const pJacketMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, roughness: 0.8 }); // vibrant coral jacket
+        const pShirtMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8 }); // dark shirt
+        const pLegMat = new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.9 }); // teal trousers
+        const pShoeMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, roughness: 0.9 }); // coral shoes
+
+        // Torso box
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.48, 0.22), pJacketMat);
+        torso.position.set(0, 0.1, 0);
+        g.add(torso);
+
+        // inner dark shirt band
+        const shirt = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.50, 0.23), pShirtMat);
+        shirt.position.set(0, 0.1, 0);
+        g.add(shirt);
+
+        // Square Head
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.28), pSkinMat);
+        head.position.set(0, 0.44, 0);
+        g.add(head);
+
+        // High blocky purple ponytail on back of head
+        const hairTop = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.10, 0.30), pHairMat);
+        hairTop.position.set(0, 0.55, -0.01);
+        g.add(hairTop);
+
+        const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.20, 0.10), pHairMat);
+        hairBack.position.set(0, 0.46, -0.10);
+        g.add(hairBack);
+
+        const ponytail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), pHairMat);
+        ponytail.position.set(0, 0.38, -0.16);
+        g.add(ponytail);
+
+        const hairFringe = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.06, 0.05), pHairMat);
+        hairFringe.position.set(0, 0.52, 0.11);
+        g.add(hairFringe);
+
+        // Pixelated Eyes
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.02), eyeMat);
+        eyeL.position.set(-0.06, 0.46, 0.135);
+        g.add(eyeL);
+
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.06;
+        g.add(eyeR);
+
+        // Cyber backpack kit
+        const pack = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.32, 0.14), new THREE.MeshStandardMaterial({ color: 0x0d9488, roughness: 0.8 }));
+        pack.position.set(0, 0.10, -0.16);
+        g.add(pack);
+
+        // Joined Voxel limbs using BoxGeometry
+        g.add(createJointedVoxelLimb("leftArm", new THREE.BoxGeometry(0.10, 0.32, 0.10), pJacketMat, [-0.22, 0.22, 0], -0.14));
+        g.add(createJointedVoxelLimb("rightArm", new THREE.BoxGeometry(0.10, 0.32, 0.10), pJacketMat, [0.22, 0.22, 0], -0.14));
+        g.add(createJointedVoxelLimb("leftLeg", new THREE.BoxGeometry(0.11, 0.34, 0.11), pLegMat, [-0.10, -0.16, 0], -0.15, new THREE.BoxGeometry(0.13, 0.06, 0.15), pShoeMat));
+        g.add(createJointedVoxelLimb("rightLeg", new THREE.BoxGeometry(0.11, 0.34, 0.11), pLegMat, [0.10, -0.16, 0], -0.15, new THREE.BoxGeometry(0.13, 0.06, 0.15), pShoeMat));
+
+      } else if (charId === 'SPACE_CAT') {
+        const catGreyMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.6 }); // Charcoal gray skin
+        const catWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }); // White highlights
+        const catPinkMat = new THREE.MeshStandardMaterial({ color: 0xfda4af, roughness: 0.8 }); // Cute pink nose/ears
+        const catStripeMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 }); // Black stripes
+
+        // Horizontal Quadruped voxel torso
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.52), catGreyMat);
+        torso.position.set(0, 0, 0);
+        g.add(torso);
+
+        // White chest fluff band
+        const chest = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.14, 0.16), catWhiteMat);
+        chest.position.set(0, -0.03, -0.19);
+        g.add(chest);
+
+        // Side black voxel stripes
+        const stripeL = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.12, 0.06), catStripeMat);
+        stripeL.position.set(-0.125, 0, 0);
+        g.add(stripeL);
+
+        const stripeR = stripeL.clone();
+        stripeR.position.x = 0.125;
+        g.add(stripeR);
+
+        // Blocky Head
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), catGreyMat);
+        head.position.set(0, 0.18, -0.28);
+        g.add(head);
+
+        // Pointy Block Ears
+        const earL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.06), catGreyMat);
+        earL.position.set(-0.08, 0.31, -0.28);
+        g.add(earL);
+
+        const earInnerL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.02), catPinkMat);
+        earInnerL.position.set(-0.08, 0.31, -0.25);
+        g.add(earInnerL);
+
+        const earR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.06), catGreyMat);
+        earR.position.set(0.08, 0.31, -0.28);
+        g.add(earR);
+
+        const earInnerR = earInnerL.clone();
+        earInnerR.position.x = 0.08;
+        g.add(earInnerR);
+
+        // Voxel muzzle snout & nose
+        const snout = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.04), catWhiteMat);
+        snout.position.set(0, 0.12, -0.395);
+        g.add(snout);
+
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.02), catPinkMat);
+        nose.position.set(0, 0.14, -0.41);
+        g.add(nose);
+
+        // Cute glowing eyes (Voxel style)
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.01), new THREE.MeshBasicMaterial({ color: 0x22c55e })); // Green cyber eyes
+        eyeL.position.set(-0.05, 0.18, -0.392);
+        g.add(eyeL);
+
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.05;
+        g.add(eyeR);
+
+        // Voxel Tail with nice white tip
+        const tailJoint = new THREE.Group();
+        tailJoint.name = "tail";
+        tailJoint.position.set(0, 0.06, 0.25);
+        
+        const tMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.28), catGreyMat);
+        tMesh.position.set(0, 0.10, 0.12);
+        tMesh.rotation.x = Math.PI / 4;
+        tailJoint.add(tMesh);
+
+        const tTip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), catWhiteMat);
+        tTip.position.set(0, 0.20, 0.22);
+        tailJoint.add(tTip);
+        g.add(tailJoint);
+
+        // Leg boxes
+        g.add(createJointedVoxelLimb("legFL", new THREE.BoxGeometry(0.06, 0.16, 0.06), catGreyMat, [-0.09, -0.1, -0.18], -0.07, new THREE.BoxGeometry(0.08, 0.03, 0.08), catWhiteMat));
+        g.add(createJointedVoxelLimb("legFR", new THREE.BoxGeometry(0.06, 0.16, 0.06), catGreyMat, [0.09, -0.1, -0.18], -0.07, new THREE.BoxGeometry(0.08, 0.03, 0.08), catWhiteMat));
+        g.add(createJointedVoxelLimb("legBL", new THREE.BoxGeometry(0.06, 0.16, 0.06), catGreyMat, [-0.09, -0.1, 0.18], -0.07, new THREE.BoxGeometry(0.08, 0.03, 0.08), catWhiteMat));
+        g.add(createJointedVoxelLimb("legBR", new THREE.BoxGeometry(0.06, 0.16, 0.06), catGreyMat, [0.09, -0.1, 0.18], -0.07, new THREE.BoxGeometry(0.08, 0.03, 0.08), catWhiteMat));
+
+      } else if (charId === 'SPACE_DOG') {
+        const dogGoldMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.6 }); // Golden-brown dog (Shiba/Loyal matches user image)
+        const dogCreamMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.7 }); // Creamy markings
+        const dogBlackMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 }); // Black nose
+
+        // Horizontal Quadruped voxel torso
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.56), dogGoldMat);
+        torso.position.set(0, 0, 0);
+        g.add(torso);
+
+        // Cream belly band
+        const belly = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.12, 0.44), dogCreamMat);
+        belly.position.set(0, -0.06, -0.05);
+        g.add(belly);
+
+        // Blocky Head
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.24), dogGoldMat);
+        head.position.set(0, 0.20, -0.30);
+        g.add(head);
+
+        // Erect triangular ears
+        const earL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.10, 0.06), dogGoldMat);
+        earL.position.set(-0.08, 0.32, -0.28);
+        g.add(earL);
+
+        const earInnerL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.02), dogCreamMat);
+        earInnerL.position.set(-0.08, 0.32, -0.25);
+        g.add(earInnerL);
+
+        const earR = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.10, 0.06), dogGoldMat);
+        earR.position.set(0.08, 0.32, -0.28);
+        g.add(earR);
+
+        const earInnerR = earInnerL.clone();
+        earInnerR.position.x = 0.08;
+        g.add(earInnerR);
+
+        // Voxel snout muzzle and snout
+        const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.12), dogCreamMat);
+        muzzle.position.set(0, 0.14, -0.40);
+        g.add(muzzle);
+
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.03), dogBlackMat);
+        nose.position.set(0, 0.17, -0.45);
+        g.add(nose);
+
+        // Pixelated Eyes
+        const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.01), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
+        eyeL.position.set(-0.06, 0.20, -0.412);
+        g.add(eyeL);
+
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.06;
+        g.add(eyeR);
+
+        // Shiba fluffy tail with white tip
+        const tailJoint = new THREE.Group();
+        tailJoint.name = "tail";
+        tailJoint.position.set(0, 0.08, 0.26);
+
+        const tMesh = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.26), dogGoldMat);
+        tMesh.position.set(0, 0.08, 0.12);
+        tMesh.rotation.x = Math.PI / 4;
+        tailJoint.add(tMesh);
+
+        const tTip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), dogCreamMat);
+        tTip.position.set(0, 0.16, 0.20);
+        tailJoint.add(tTip);
+        g.add(tailJoint);
+
+        // Leg boxes
+        g.add(createJointedVoxelLimb("legFL", new THREE.BoxGeometry(0.07, 0.18, 0.07), dogGoldMat, [-0.10, -0.11, -0.20], -0.08, new THREE.BoxGeometry(0.09, 0.03, 0.09), dogCreamMat));
+        g.add(createJointedVoxelLimb("legFR", new THREE.BoxGeometry(0.07, 0.18, 0.07), dogGoldMat, [0.10, -0.11, -0.20], -0.08, new THREE.BoxGeometry(0.09, 0.03, 0.09), dogCreamMat));
+        g.add(createJointedVoxelLimb("legBL", new THREE.BoxGeometry(0.07, 0.18, 0.07), dogGoldMat, [-0.10, -0.11, 0.20], -0.08, new THREE.BoxGeometry(0.09, 0.03, 0.09), dogCreamMat));
+        g.add(createJointedVoxelLimb("legBR", new THREE.BoxGeometry(0.07, 0.18, 0.07), dogGoldMat, [0.10, -0.11, 0.20], -0.08, new THREE.BoxGeometry(0.09, 0.03, 0.09), dogCreamMat));
+      }
+
+      return { group: g, thrusterFlame };
+    };
+
     // -------------------------------------------------------------
     // THREE.JS GRAPHIC SYNCHRONISATION LAYOUT
     // -------------------------------------------------------------
@@ -1066,16 +1439,29 @@ export default function GameCanvas({
       }
 
       // -------------------------------------------------------------
-      // 2. RENDERING THE PLAYER 3D EMBLEMS (Ships & Pilot Emojis)
+      // 2. RENDERING THE PLAYER 3D EMBLEMS (Runner and Animations)
       // -------------------------------------------------------------
       const pGroup = playerGroupRef.current;
       if (pGroup) {
-        pGroup.position.set(pX3dCur, 0.6 + Math.sin(time * 5.5) * 0.06, 11.0); // Gentle floating animation
+        const charSpecs = {
+          MALE_PILOT: { scale: 2.3, baseHeight: 1.15, nameSpriteY: 2.9 },
+          FEMALE_PILOT: { scale: 2.3, baseHeight: 1.15, nameSpriteY: 2.9 },
+          SPACE_CAT: { scale: 2.3, baseHeight: 0.67, nameSpriteY: 2.4 },
+          SPACE_DOG: { scale: 2.3, baseHeight: 0.67, nameSpriteY: 2.4 },
+        }[selectedCharacterId] || { scale: 2.3, baseHeight: 1.15, nameSpriteY: 2.9 };
+
+        // Compute standard position Y with a nice bouncy running hop
+        const isRunnerMoving = status === 'RUNNING' && !isPausedRef.current;
+        const runCycleSpeed = 16.0 * (isRunnerMoving ? gameSpeedMultiplier : 0.2);
+        const runHop = isRunnerMoving ? Math.abs(Math.sin(time * runCycleSpeed)) * 0.07 : 0;
+        
+        // Ground runner Y positioning with vertical jumping height shift!
+        pGroup.position.set(pX3dCur, charSpecs.baseHeight + runHop + pJumpY.current, 11.0);
 
         // Soft visual tilt on steering direction inputs
         const isPressingLeft = !isPausedRef.current && (keysPressed.current['a'] || keysPressed.current['arrowleft']);
         const isPressingRight = !isPausedRef.current && (keysPressed.current['d'] || keysPressed.current['arrowright']);
-        const tiltTargetRot = isPressingLeft ? 0.26 : isPressingRight ? -0.26 : 0;
+        const tiltTargetRot = isPressingLeft ? 0.22 : isPressingRight ? -0.22 : 0;
         pGroup.rotation.z += (tiltTargetRot - pGroup.rotation.z) * 0.14;
 
         // Flash ship visibility on player invulnerable period
@@ -1093,184 +1479,98 @@ export default function GameCanvas({
             pGroup.remove(child);
           }
 
-          // Build beautiful tech-forward themed cruiser parts
-          let mainColor = 0x38bdf8;
-          let wingColor = 0xf97316;
-          let avatarEmoji = '👨‍🚀';
+          // Build beautifully crafted character runner
+          const { group: runnerGroup, thrusterFlame } = buildWastelandRunner(selectedCharacterId);
+          runnerGroup.scale.set(charSpecs.scale, charSpecs.scale, charSpecs.scale);
+          pGroup.add(runnerGroup);
+          thrusterFlameRef.current = thrusterFlame;
+
+          // Float name label above head beautifully
           let pilotChineseName = '雷恩';
-          let isMiniShip = false;
           if (selectedCharacterId === 'MALE_PILOT') {
-            mainColor = 0x0284c7; // Deep tech blue
-            wingColor = 0xf97316; // Neon solar orange core
-            avatarEmoji = '👨‍🔧';
             pilotChineseName = language === 'ko' ? '라이언' : language === 'en' ? 'Ryan' : '雷恩';
-            isMiniShip = false;
           } else if (selectedCharacterId === 'FEMALE_PILOT') {
-            mainColor = 0xec4899; // Aerodynamic pink
-            wingColor = 0x8b5cf6; // Purple hyper flight rings
-            avatarEmoji = '👩‍🎤';
             pilotChineseName = language === 'ko' ? '아이린' : language === 'en' ? 'Irene' : '艾琳';
-            isMiniShip = false;
           } else if (selectedCharacterId === 'SPACE_CAT') {
-            mainColor = 0xf59e0b; // Gold core
-            wingColor = 0x10b981; // Green leaf matrix
-            avatarEmoji = '😼';
-            pilotChineseName = language === 'ko' ? '喵酱(묘짱)' : language === 'en' ? 'Myau' : '喵酱';
-            isMiniShip = true;
+            pilotChineseName = language === 'ko' ? '먀오짱' : language === 'en' ? 'Myau' : '喵酱';
           } else if (selectedCharacterId === 'SPACE_DOG') {
-            mainColor = 0x06b6d4; // Cyan plates
-            wingColor = 0x3b82f6; // High frequency blue fins
-            avatarEmoji = '🐕';
-            pilotChineseName = language === 'ko' ? '汪仔(왕자)' : language === 'en' ? 'Wangzai' : '汪仔';
-            isMiniShip = true;
+            pilotChineseName = language === 'ko' ? '왕자' : language === 'en' ? 'Wangzai' : '汪仔';
           }
 
-          // Create a dedicated ship sub-group which can be scaled cleanly
-          const shipSubGroup = new THREE.Group();
-          pGroup.add(shipSubGroup);
-
-          // Apply scale: Humans get standard scale, Cat/Dog get smaller mini scale (smaller by a full margin)
-          const shipScale = isMiniShip ? 0.68 : 1.0;
-          shipSubGroup.scale.set(shipScale, shipScale, shipScale);
-
-          // A: FUSELAGE BASE DECORATION (Main cabin & aerodynamic body)
-          const bodyGeo = new THREE.ConeGeometry(0.55, 2.2, 8);
-          bodyGeo.rotateX(Math.PI / 2); // Aligned pointing forward
-          const bodyMat = new THREE.MeshStandardMaterial({
-            color: mainColor,
-            metalness: 0.9,
-            roughness: 0.15
-          });
-          const body = new THREE.Mesh(bodyGeo, bodyMat);
-          body.position.set(0, 0, -0.2);
-          shipSubGroup.add(body);
-
-          // B: AERODYNAMIC TECH WINGS (Adjust shape per spacecraft)
-          const wingGeo = new THREE.BoxGeometry(2.4, 0.08, 0.6);
-          const wingMat = new THREE.MeshStandardMaterial({
-            color: wingColor,
-            metalness: 0.8,
-            roughness: 0.25
-          });
-          const wings = new THREE.Mesh(wingGeo, wingMat);
-          wings.position.set(0, -0.1, 0.2);
-          shipSubGroup.add(wings);
-
-          // Extra Wing / Tail details based on pilot style!
-          if (selectedCharacterId === 'SPACE_CAT') {
-            // Cute robotic kitty space-ears molded on the spaceship hull tips
-            const earGeo = new THREE.ConeGeometry(0.18, 0.42, 4);
-            earGeo.rotateX(Math.PI / 10);
-            const earMat = new THREE.MeshStandardMaterial({
-              color: mainColor,
-              metalness: 0.8,
-              roughness: 0.2
-            });
-
-            const earL = new THREE.Mesh(earGeo, earMat);
-            earL.position.set(-0.35, 0.45, -0.4);
-            shipSubGroup.add(earL);
-
-            const earR = new THREE.Mesh(earGeo, earMat);
-            earR.position.set(0.35, 0.45, -0.4);
-            shipSubGroup.add(earR);
-          } else if (selectedCharacterId === 'SPACE_DOG') {
-            // Floppy twin canine vertical tail stabilizers
-            const stabilizerGeo = new THREE.BoxGeometry(0.08, 0.55, 0.42);
-            const stabMat = new THREE.MeshStandardMaterial({
-              color: wingColor,
-              metalness: 0.8
-            });
-
-            const stabilizerLeft = new THREE.Mesh(stabilizerGeo, stabMat);
-            stabilizerLeft.position.set(-0.7, 0.15, 0.3);
-            stabilizerLeft.rotation.z = -0.32;
-            shipSubGroup.add(stabilizerLeft);
-
-            const stabilizerRight = new THREE.Mesh(stabilizerGeo, stabMat);
-            stabilizerRight.position.set(0.7, 0.15, 0.3);
-            stabilizerRight.rotation.z = 0.32;
-            shipSubGroup.add(stabilizerRight);
-          } else if (selectedCharacterId === 'FEMALE_PILOT') {
-            // Extra supersonic needle winglets
-            const needleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.8, 4);
-            needleGeo.rotateX(Math.PI / 2);
-            const needleMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9 });
-            const needleL = new THREE.Mesh(needleGeo, needleMat);
-            needleL.position.set(-1.25, -0.1, 0.2);
-            shipSubGroup.add(needleL);
-            const needleR = new THREE.Mesh(needleGeo, needleMat);
-            needleR.position.set(1.25, -0.1, 0.2);
-            shipSubGroup.add(needleR);
-          }
-
-          // C: REAR CYLINDER ENGINES
-          const engineGeo = new THREE.CylinderGeometry(0.24, 0.16, 0.8, 8);
-          engineGeo.rotateX(Math.PI / 2);
-          const engineMat = new THREE.MeshStandardMaterial({
-            color: 0x334155,
-            metalness: 0.9,
-            roughness: 0.1
-          });
-          
-          const engineLeft = new THREE.Mesh(engineGeo, engineMat);
-          engineLeft.position.set(-0.35, -0.12, 0.65);
-          shipSubGroup.add(engineLeft);
-
-          const engineRight = new THREE.Mesh(engineGeo, engineMat);
-          engineRight.position.set(0.35, -0.12, 0.65);
-          shipSubGroup.add(engineRight);
-
-          // D: COCKPIT GLASS CANOPY (Translucent, carrying the visible pilot inside!)
-          const cockpitGeo = new THREE.SphereGeometry(0.38, 16, 16);
-          const cockpitMat = new THREE.MeshStandardMaterial({
-            color: 0x38bdf8,
-            transparent: true,
-            opacity: 0.35, // Clear glass transparency so the passenger inside is clearly visible!
-            roughness: 0.05,
-            metalness: 0.9
-          });
-          const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
-          cockpit.position.set(0, 0.15, -0.15);
-          shipSubGroup.add(cockpit);
-
-          // E: ANIMATED THRUSTER LIGHT CONE
-          const thrGeo = new THREE.ConeGeometry(0.35, 1.3, 8);
-          thrGeo.rotateX(-Math.PI / 2); // pointing out the engines
-          const thrMat = new THREE.MeshBasicMaterial({
-            color: wingColor,
-            transparent: true,
-            opacity: 0.75
-          });
-          const flame = new THREE.Mesh(thrGeo, thrMat);
-          flame.position.set(0, -0.12, 1.4);
-          shipSubGroup.add(flame);
-          thrusterFlameRef.current = flame;
-
-          // F: PILOT HUD TEXTURE CANVAS FLOATING OVER COCKPIT (Stays at top relative to pGroup)
           const nameTex = createTextTexture(pilotChineseName, '#ffffff');
           const nameMat = new THREE.SpriteMaterial({ map: nameTex, transparent: true });
           const nameSprite = new THREE.Sprite(nameMat);
-          nameSprite.scale.set(1.8, 0.45, 1.0);
-          nameSprite.position.set(0, 1.45, 0); // floats high safely
+          nameSprite.scale.set(1.6, 0.4, 1.0);
+          nameSprite.position.set(0, charSpecs.nameSpriteY, 0); // floats high safely above head
           pGroup.add(nameSprite);
           nameSpriteRef.current = nameSprite;
+        }
 
-          // G: PILOT CARTOON EMOJI (Beautifully sits cozy inside/at cockpit coordinates)
-          const emojiTex = createEmojiTexture(avatarEmoji);
-          const emojiMat = new THREE.SpriteMaterial({ map: emojiTex, transparent: true });
-          const emojiSprite = new THREE.Sprite(emojiMat);
-          
-          // Style size and placement snug inside the standard or mini cockpit
-          if (isMiniShip) {
-            emojiSprite.scale.set(0.65, 0.65, 0.65);
-            emojiSprite.position.set(0, 0.12, -0.1);
-          } else {
-            emojiSprite.scale.set(0.9, 0.9, 0.9);
-            emojiSprite.position.set(0, 0.16, -0.15);
+        // Animate running limbs cycles dynamically
+        const charGroup = pGroup.getObjectByName("charGroup");
+        if (charGroup) {
+          const isActuallyMoving = status === 'RUNNING' && !isPausedRef.current;
+          const swingAngle = isActuallyMoving ? 0.65 : 0.04;
+          const breathing = isActuallyMoving ? 0 : Math.sin(time * 4) * 0.04;
+
+          const leftArm = charGroup.getObjectByName('leftArm');
+          const rightArm = charGroup.getObjectByName('rightArm');
+          const leftLeg = charGroup.getObjectByName('leftLeg');
+          const rightLeg = charGroup.getObjectByName('rightLeg');
+
+          const isJumping = pJumpY.current > 0.01;
+
+          if (leftLeg && rightLeg) {
+            leftLeg.rotation.x = isJumping ? -0.4 : (isActuallyMoving ? Math.sin(time * runCycleSpeed) * swingAngle : 0);
+            rightLeg.rotation.x = isJumping ? -0.4 : (isActuallyMoving ? -Math.sin(time * runCycleSpeed) * swingAngle : 0);
           }
-          pGroup.add(emojiSprite);
-          emojiSpriteRef.current = emojiSprite;
+          if (leftArm && rightArm) {
+            leftArm.rotation.x = isJumping ? 0.35 : (isActuallyMoving ? -Math.sin(time * runCycleSpeed) * swingAngle : breathing);
+            rightArm.rotation.x = isJumping ? 0.35 : (isActuallyMoving ? Math.sin(time * runCycleSpeed) * swingAngle : -breathing);
+          }
+
+          const leftWing = charGroup.getObjectByName('leftWing');
+          const rightWing = charGroup.getObjectByName('rightWing');
+          if (leftWing && rightWing) {
+            leftWing.rotation.y = 0.4 + Math.sin(time * 12) * 0.18;
+            rightWing.rotation.y = -0.4 - Math.sin(time * 12) * 0.18;
+          }
+
+          const legFL = charGroup.getObjectByName('legFL');
+          const legFR = charGroup.getObjectByName('legFR');
+          const legBL = charGroup.getObjectByName('legBL');
+          const legBR = charGroup.getObjectByName('legBR');
+          const tail = charGroup.getObjectByName('tail');
+
+          if (legFL && legFR && legBL && legBR) {
+            if (isJumping) {
+              legFL.rotation.x = 0.4;
+              legFR.rotation.x = 0.4;
+              legBL.rotation.x = -0.4;
+              legBR.rotation.x = -0.4;
+            } else if (isActuallyMoving) {
+              legFL.rotation.x = Math.sin(time * runCycleSpeed) * swingAngle;
+              legBR.rotation.x = Math.sin(time * runCycleSpeed) * swingAngle;
+              legFR.rotation.x = -Math.sin(time * runCycleSpeed) * swingAngle;
+              legBL.rotation.x = -Math.sin(time * runCycleSpeed) * swingAngle;
+            } else {
+              legFL.rotation.x = 0;
+              legFR.rotation.x = 0;
+              legBL.rotation.x = 0;
+              legBR.rotation.x = 0;
+            }
+          }
+          if (tail) {
+            if (isJumping) {
+              tail.rotation.z = Math.sin(time * 6) * 0.15 + 0.3;
+              tail.rotation.y = 0;
+            } else {
+              const tailSpeed = isActuallyMoving ? 14.0 : 4.0;
+              const tailWag = isActuallyMoving ? 0.35 : 0.12;
+              tail.rotation.z = Math.sin(time * tailSpeed) * tailWag;
+              tail.rotation.y = Math.cos(time * tailSpeed * 0.8) * (tailWag * 0.6);
+            }
+          }
         }
 
         // Pulse thruster jets flame size
@@ -1564,39 +1864,112 @@ export default function GameCanvas({
           scene.add(campObj);
           campMeshRef.current = campObj;
 
-          // Huge warning safety yellow archways bridging key road lanes
-          const basePillarGeo = new THREE.CylinderGeometry(0.24, 0.24, 5.0, 7);
-          const pillarMat = new THREE.MeshStandardMaterial({
-            color: 0x1e293b,
-            emissive: 0xeab308, // glowing caution gold
-            roughness: 0.3
+          // Rich rustic voxel wood log structures
+          const woodMat = new THREE.MeshStandardMaterial({
+            color: 0x7c2d12, // beautiful cedar log brown
+            roughness: 0.9,
           });
 
-          const pLeft = new THREE.Mesh(basePillarGeo, pillarMat);
+          // Blocky Wooden Arch Pillars
+          const pillarGeo = new THREE.BoxGeometry(0.5, 5.0, 0.5);
+
+          const pLeft = new THREE.Mesh(pillarGeo, woodMat);
           pLeft.position.set(-6, 2.5, 0);
           campObj.add(pLeft);
 
-          const pRight = new THREE.Mesh(basePillarGeo, pillarMat);
+          const pRight = new THREE.Mesh(pillarGeo, woodMat);
           pRight.position.set(6, 2.5, 0);
           campObj.add(pRight);
 
-          const beamGeo = new THREE.BoxGeometry(12.5, 0.45, 0.45);
-          const beam = new THREE.Mesh(beamGeo, pillarMat);
+          // Top thick roofing horizontal support beam
+          const beamGeo = new THREE.BoxGeometry(13.2, 0.6, 0.6);
+          const beam = new THREE.Mesh(beamGeo, woodMat);
           beam.position.set(0, 5.0, 0);
           campObj.add(beam);
 
-          // Cozy safety glowing forcefield dome dome backing strip representation
-          const domeGeo = new THREE.CylinderGeometry(5.8, 5.8, 0.05, 24, 1, true, 0, Math.PI);
-          domeGeo.rotateZ(-Math.PI / 2); // Makes arch dome cap
-          const domeMat = new THREE.MeshBasicMaterial({
-            color: 0xeab308,
-            transparent: true,
-            opacity: 0.16,
-            side: THREE.DoubleSide
+          // Diagonal brace supports (gorgeous voxel touch)
+          const braceGeo = new THREE.BoxGeometry(1.2, 0.25, 0.25);
+          
+          const braceL = new THREE.Mesh(braceGeo, woodMat);
+          braceL.position.set(-5.3, 4.4, 0);
+          braceL.rotation.z = -Math.PI / 4;
+          campObj.add(braceL);
+
+          const braceR = new THREE.Mesh(braceGeo, woodMat);
+          braceR.position.set(5.3, 4.4, 0);
+          braceR.rotation.z = Math.PI / 4;
+          campObj.add(braceR);
+
+          // Cozy hanging paper lantern boxes with orange survival glow
+          const lanternGeo = new THREE.BoxGeometry(0.3, 0.45, 0.3);
+          const lanternMat = new THREE.MeshStandardMaterial({
+            color: 0xea580c,
+            emissive: 0xf97316,
+            emissiveIntensity: 1.5,
           });
-          const dome = new THREE.Mesh(domeGeo, domeMat);
-          dome.position.set(0, 0, 0);
-          campObj.add(dome);
+
+          const lanternL = new THREE.Mesh(lanternGeo, lanternMat);
+          lanternL.position.set(-5.6, 4.2, 0);
+          campObj.add(lanternL);
+
+          const lanternR = new THREE.Mesh(lanternGeo, lanternMat);
+          lanternR.position.set(5.6, 4.2, 0);
+          campObj.add(lanternR);
+
+          // Mini checkpoint camp log cabin house on the side of the road
+          const cabinGroup = new THREE.Group();
+          cabinGroup.position.set(-8.2, 0, -1.0); // side grass clearing
+          campObj.add(cabinGroup);
+
+          const floorGeo = new THREE.BoxGeometry(2.2, 0.15, 2.2);
+          const floorMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+          const floor = new THREE.Mesh(floorGeo, floorMat);
+          floor.position.set(0, 0.075, 0);
+          cabinGroup.add(floor);
+
+          const wallMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.9 });
+          const cabinWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 1.8), wallMat);
+          cabinWall.position.set(0, 0.775, 0);
+          cabinGroup.add(cabinWall);
+
+          // Forest green tiled roof slates (matching image exactly!)
+          const roofMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 });
+          const roofL = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 2.1), roofMat);
+          roofL.position.set(-0.5, 1.6, 0);
+          roofL.rotation.z = 0.45;
+          cabinGroup.add(roofL);
+
+          const roofR = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.12, 2.1), roofMat);
+          roofR.position.set(0.5, 1.6, 0);
+          roofR.rotation.z = -0.45;
+          cabinGroup.add(roofR);
+
+          // Glowing cozy window box
+          const windowGeo = new THREE.BoxGeometry(0.12, 0.4, 0.4);
+          const windowMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xeab308, emissiveIntensity: 1.5 });
+          const cabWindow = new THREE.Mesh(windowGeo, windowMat);
+          cabWindow.position.set(0.9, 0.8, 0);
+          cabinGroup.add(cabWindow);
+
+          // Side Cozy camp bonfire (roaring amber fireplace)
+          const campfireGroup = new THREE.Group();
+          campfireGroup.position.set(7.8, 0, 0); // right side grass clearing
+          campObj.add(campfireGroup);
+
+          const logGeo = new THREE.BoxGeometry(0.12, 0.12, 0.8);
+          const log1 = new THREE.Mesh(logGeo, woodMat);
+          log1.rotation.y = Math.PI / 4;
+          campfireGroup.add(log1);
+
+          const log2 = new THREE.Mesh(logGeo, woodMat);
+          log2.rotation.y = -Math.PI / 4;
+          campfireGroup.add(log2);
+
+          const fireGeo = new THREE.BoxGeometry(0.4, 0.6, 0.4);
+          const fireMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+          const fireElem = new THREE.Mesh(fireGeo, fireMat);
+          fireElem.position.y = 0.3;
+          campfireGroup.add(fireElem);
 
           // Giant overhead neon floating HUD sign label "SHELTER CHECKPOINT CAMP"
           const marqueeText = language === 'ko' ? '⚡ 안전 대피소 ⚡' : language === 'en' ? '⚡ SAFE CAMP ⚡' : '⚡ 安全避难所 ⚡';
@@ -1678,6 +2051,26 @@ export default function GameCanvas({
             id="btn_touch_left"
           >
             ◀ A 键
+          </button>
+          <button
+            onMouseDown={() => {
+              if (pJumpY.current === 0 && pJumpVelocity.current === 0) {
+                pJumpVelocity.current = 0.165;
+                playJumpSound();
+              }
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              if (pJumpY.current === 0 && pJumpVelocity.current === 0) {
+                pJumpVelocity.current = 0.165;
+                playJumpSound();
+              }
+            }}
+            className="flex-1 max-w-[150px] h-15 rounded-xl bg-slate-900/80 border border-emerald-500/30 active:scale-95 active:bg-emerald-500/25 text-emerald-400 font-extrabold flex items-center justify-center text-md transition-all duration-75 backdrop-blur-md select-none touch-none cursor-pointer"
+            title="Jump Spacebar"
+            id="btn_touch_jump"
+          >
+            {language === 'ko' ? '▲ 점프' : language === 'en' ? '▲ JUMP' : '▲ 跳跃'}
           </button>
           <button
             onMouseDown={() => handleVirtualRight(true)}
