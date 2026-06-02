@@ -1,0 +1,6 @@
+{
+  "name": "Survival Runner",
+  "description": "竖屏无限跑酷与生存收集轻量化网页游戏。收集材料，避开垃圾障碍，在营地休整并通关！",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
