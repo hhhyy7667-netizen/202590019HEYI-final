@@ -303,8 +303,8 @@ export default function App() {
   const [builtCamps, setBuiltCamps] = useState<string[]>([]);
 
   // Sci-Fi Login & Google Sheet sync state variables
-  const [usernameInput, setUsernameInput] = useState<string>('');
-  const [passwordInput, setPasswordInput] = useState<string>('');
+  const [usernameInput, setUsernameInput] = useState<string>('A1');
+  const [passwordInput, setPasswordInput] = useState<string>('123456');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [loggedInUser, setLoggedInUser] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
@@ -634,8 +634,8 @@ export default function App() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setLoggedInUser('');
-    setUsernameInput('');
-    setPasswordInput('');
+    setUsernameInput('A1');
+    setPasswordInput('123456');
     localStorage.removeItem('survival_runner_logged_in_user');
     playCollectSound();
   };
